@@ -217,7 +217,7 @@ namespace Obloq {
         let item = OBLOQ_STR_TYPE_IS_NONE
         //First send data through usb, avoid the first data scrambled.
         obloqWriteString("123")
-        item = serial.readString()
+        let item = serial.readString()
         item = serial.readString()
         item = serial.readString()
         serial.redirect(
@@ -225,13 +225,18 @@ namespace Obloq {
             OBLOQ_SERIAL_RX,
             BaudRate.BaudRate9600
         )
-        obloqSetTxBufferSize(300)
-        obloqSetRxBufferSize(300)
+        serial.setRxBufferSize(200)
+        serial.setTxBufferSize(100)
         obloqWriteString("\r")
         item = serial.readString()
-        OBLOQ_SERIAL_INIT = OBLOQ_BOOL_TYPE_IS_TRUE
-        obloqClearRxBuffer()
-        obloqClearTxBuffer()
+        obloqWriteString("|1|1|\r")
+        item = serial.readUntil("\r")
+        item = serial.readString()
+        item = serial.readString()
+        item = serial.readString()
+        item = serial.readString()
+        OBLOQ_SERIAL_INIT = true
+
         onEvent()
     }
 
@@ -239,31 +244,7 @@ namespace Obloq {
         OBLOQ_WORKING_MODE_IS_HTTP = OBLOQ_BOOL_TYPE_IS_TRUE
         let ret = Obloq_connect_wifi()
         if (OBLOQ_DEBUG) { basic.showNumber(ret) }
-        switch (ret) {
-            case OBLOQ_ERROR_TYPE_IS_SUCCE: {
-                basic.showIcon(IconNames.Yes)
-                basic.pause(500)
-                basic.clearScreen()
-                OBLOQ_WIFI_CONNECTED = OBLOQ_BOOL_TYPE_IS_TRUE
-            } break
-            case OBLOQ_ERROR_TYPE_IS_WIFI_CONNECT_TIMEOUT: {
-                basic.showIcon(IconNames.No)
-                basic.pause(500)
-                OBLOQ_WRONG_TYPE = "wifi connect timeout"
-                return
-            } break
-            case OBLOQ_ERROR_TYPE_IS_WIFI_CONNECT_FAILURE: {
-                basic.showIcon(IconNames.No)
-                basic.pause(500)
-                OBLOQ_WRONG_TYPE = "wifi connect failure"
-                return
-            } break
-            case OBLOQ_ERROR_TYPE_IS_ERR: {
-                basic.showNumber(ret)
-                basic.showIcon(IconNames.No)
-                while (OBLOQ_BOOL_TYPE_IS_TRUE) { basic.pause(10000) }
-            } break
-        }
+    
         OBLOQ_HTTP_INIT = OBLOQ_BOOL_TYPE_IS_TRUE
         OBLOQ_WORKING_MODE_IS_STOP = OBLOQ_BOOL_TYPE_IS_FALSE
     }
@@ -285,32 +266,8 @@ namespace Obloq {
         let ret = 0
         if (connectStart == "connect wifi") {
             ret = Obloq_connect_wifi()
-            if (OBLOQ_DEBUG) { basic.showNumber(ret) }
-            switch (ret) {
-                case OBLOQ_ERROR_TYPE_IS_SUCCE: {
-                    basic.showIcon(IconNames.Yes)
-                    basic.pause(500)
-                    basic.clearScreen()
-                    OBLOQ_WIFI_CONNECTED = OBLOQ_BOOL_TYPE_IS_TRUE
-                } break
-                case OBLOQ_ERROR_TYPE_IS_WIFI_CONNECT_TIMEOUT: {
-                    basic.showIcon(IconNames.No)
-                    basic.pause(500)
-                    OBLOQ_WRONG_TYPE = "wifi connect timeout"
-                    return
-                } break
-                case OBLOQ_ERROR_TYPE_IS_WIFI_CONNECT_FAILURE: {
-                    basic.showIcon(IconNames.No)
-                    basic.pause(500)
-                    OBLOQ_WRONG_TYPE = "wifi connect failure"
-                    return
-                } break
-                case OBLOQ_ERROR_TYPE_IS_ERR: {
-                    basic.showNumber(ret)
-                    basic.showIcon(IconNames.No)
-                    while (OBLOQ_BOOL_TYPE_IS_TRUE) { basic.pause(10000) }
-                } break
-            }
+
+    
         }
         if (connectStart == "connect wifi" || connectStart == "connect mqtt") {
             ret = Obloq_connect_iot();
@@ -792,52 +749,21 @@ namespace Obloq {
         Obloq_connect_wifi()
     }*/
 
-    function Obloq_connect_wifi(): number {
-        if (OBLOQ_WIFI_CONNECTED == OBLOQ_BOOL_TYPE_IS_TRUE) {
-            return OBLOQ_ERROR_TYPE_IS_SUCCE
-        }
-
-        OBLOQ_WIFI_ICON = 1
-        let timeout = 10000  //Set the default timeout period 10s.
-        timeout = timeout < 100 ? 100 : timeout //Timeout minimum resolution 100ms
-
-        let timeout_count_max = timeout / 100
-        let timeout_count_now = 0
-        if (OBLOQ_WIFI_CONNECT_FIRST) {
-            //serial init
+    function Obloq_connect_wifi(): void {
+        if (OBLOQ_SERIAL_INIT) {
             if (!OBLOQ_SERIAL_INIT) {
                 Obloq_serial_init()
             }
-            //show icon
-            Obloq_wifi_icon_display()
-            for (let i = 0; i < 3; i++) {
-                obloqWriteString("|1|1|\r")
-                basic.pause(100)
-            }
+            let item = "test"
             obloqWriteString("|2|1|" + OBLOQ_WIFI_SSID + "," + OBLOQ_WIFI_PASSWORD + "|\r") //Send wifi account and password instructions
-            OBLOQ_WIFI_CONNECT_FIRST = OBLOQ_BOOL_TYPE_IS_FALSE
+            item = serial.readUntil("\r")
+            while (item.indexOf("|2|3|") < 0) {
+                item = serial.readUntil("\r")
+            }
+            OBLOQ_IP = item.substr(5, item.length - 6)
+            OBLOQ_WIFI_CONNECTED = true
+            basic.showIcon(IconNames.Yes)
         }
-
-        while (OBLOQ_BOOL_TYPE_IS_TRUE) {
-            if ((timeout_count_now + 1) % 3 == 0) {
-                Obloq_wifi_icon_display()
-            }
-            if (OBLOQ_ANSWER_CMD == "WifiConnected") {
-                OBLOQ_ANSWER_CMD = OBLOQ_STR_TYPE_IS_NONE
-                OBLOQ_WIFI_IP = OBLOQ_ANSWER_CONTENT
-                return OBLOQ_ERROR_TYPE_IS_SUCCE
-            } else if (OBLOQ_ANSWER_CMD == "WifiConnectFailure") {
-                OBLOQ_ANSWER_CMD = OBLOQ_STR_TYPE_IS_NONE
-                return OBLOQ_ERROR_TYPE_IS_WIFI_CONNECT_FAILURE
-            }
-            basic.pause(100)
-            timeout_count_now += 1
-            if (timeout_count_now > timeout_count_max) {
-                //basic.showIcon(IconNames.No)
-                return OBLOQ_ERROR_TYPE_IS_WIFI_CONNECT_TIMEOUT
-            }
-        }
-        return OBLOQ_ERROR_TYPE_IS_ERR
     }
 
     /**
@@ -1375,9 +1301,7 @@ namespace Obloq {
         } else if (item.indexOf("|2|1|", 0) != -1) {
             OBLOQ_ANSWER_CMD = "WifiDisconnect"
             OBLOQ_ANSWER_CONTENT = OBLOQ_STR_TYPE_IS_NONE
-            if (OBLOQ_MQTT_INIT || OBLOQ_HTTP_INIT || OBLOQ_WIFI_CONNECTED) {
-                OBLOQ_WRONG_TYPE = "wifi disconnect"
-            }
+
             return
         } else if (item.indexOf("|2|2|", 0) != -1) {
             OBLOQ_ANSWER_CMD = "WifiConnecting"
